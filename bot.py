@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import yt_dlp
 
-# Enhanced logging for Railway
+# Enhanced logging for Render
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
@@ -34,8 +34,8 @@ def install_ffmpeg():
         pass
     
     try:
-        # Install FFmpeg using apt (works on Railway's Ubuntu-based containers)
-        logger.info("Installing FFmpeg...")
+        # Install FFmpeg on Render
+        logger.info("Installing FFmpeg on Render...")
         subprocess.run(['apt-get', 'update'], check=True, capture_output=True)
         subprocess.run(['apt-get', 'install', '-y', 'ffmpeg'], check=True, capture_output=True)
         
@@ -57,7 +57,7 @@ ffmpeg_available = install_ffmpeg()
 if not ffmpeg_available:
     logger.warning("⚠️ FFmpeg not available - audio conversion will not work")
 
-logger.info("🚀 Bot starting on Railway...")
+logger.info("🚀 Bot starting on Render...")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Start command from user: {update.effective_user.id}")
