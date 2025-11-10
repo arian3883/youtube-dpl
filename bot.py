@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import yt_dlp
@@ -9,7 +10,7 @@ import yt_dlp
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
-    handlers=[logging.StreamHandler()]  # This ensures logs go to Railway
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,43 @@ if not TOKEN:
     logger.error("❌ TOKEN environment variable is not set!")
     exit(1)
 
+# Install FFmpeg if not available
+def install_ffmpeg():
+    try:
+        # Check if FFmpeg is available
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+        if result.returncode == 0:
+            logger.info("✅ FFmpeg is already available")
+            return True
+    except:
+        logger.warning("FFmpeg not found, installing...")
+        pass
+    
+    try:
+        # Install FFmpeg using apt (works on Railway's Ubuntu-based containers)
+        logger.info("Installing FFmpeg...")
+        subprocess.run(['apt-get', 'update'], check=True, capture_output=True)
+        subprocess.run(['apt-get', 'install', '-y', 'ffmpeg'], check=True, capture_output=True)
+        
+        # Verify installation
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+        if result.returncode == 0:
+            logger.info("✅ FFmpeg installed successfully")
+            return True
+        else:
+            logger.error("❌ FFmpeg installation failed")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Failed to install FFmpeg: {e}")
+        return False
+
+# Install FFmpeg on startup
+ffmpeg_available = install_ffmpeg()
+
+if not ffmpeg_available:
+    logger.warning("⚠️ FFmpeg not available - audio conversion will not work")
+
 logger.info("🚀 Bot starting on Railway...")
-logger.info(f"✅ Token loaded: {TOKEN[:10]}...")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Start command from user: {update.effective_user.id}")
@@ -62,12 +98,16 @@ async def handle_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("1080p", callback_data=f"1080p:{url}")],
                 [InlineKeyboardButton("720p", callback_data=f"720p:{url}")],
                 [InlineKeyboardButton("480p", callback_data=f"480p:{url}")],
+                [InlineKeyboardButton("360p", callback_data=f"360p:{url}")],
                 [InlineKeyboardButton("🔙 Back", callback_data=f"back:{url}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text("Select video quality:", reply_markup=reply_markup)
 
         elif choice == "audio":
+            if not ffmpeg_available:
+                await query.edit_message_text("❌ Audio conversion is currently unavailable. Please try video download instead.")
+                return
             await query.edit_message_text("🎵 Downloading audio...")
             await download_audio(query, context, url)
 
@@ -83,7 +123,7 @@ async def handle_quality(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         quality, url = query.data.split(":", 1)
 
-        if quality in ["1080p", "720p", "480p"]:
+        if quality in ["1080p", "720p", "480p", "360p"]:
             await query.edit_message_text(f"📥 Downloading {quality}...")
             await download_video(query, context, url, quality)
         elif quality == "back":
@@ -105,8 +145,15 @@ async def download_video(query, context, url: str, quality: str):
     try:
         logger.info(f"Downloading video: {url} in {quality}")
         
+        format_map = {
+            "1080p": "best[height<=1080]",
+            "720p": "best[height<=720]", 
+            "480p": "best[height<=480]",
+            "360p": "best[height<=360]"
+        }
+        
         ydl_opts = {
-            "format": "best[height<=1080]" if quality == "1080p" else "best[height<=720]" if quality == "720p" else "best[height<=480]",
+            "format": format_map.get(quality, "best[height<=720]"),
             "outtmpl": "/tmp/video.%(ext)s",
         }
 
@@ -125,7 +172,6 @@ async def download_video(query, context, url: str, quality: str):
             )
         
         # Cleanup
-        import os
         if os.path.exists(filename):
             os.remove(filename)
             
@@ -142,6 +188,11 @@ async def download_audio(query, context, url: str):
         
         ydl_opts = {
             "format": "bestaudio/best",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }],
             "outtmpl": "/tmp/audio.%(ext)s",
         }
 
@@ -160,7 +211,6 @@ async def download_audio(query, context, url: str):
             )
         
         # Cleanup
-        import os
         if os.path.exists(filename):
             os.remove(filename)
             
@@ -184,7 +234,7 @@ def main():
         app.add_handler(CommandHandler("start", start))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, show_options))
         app.add_handler(CallbackQueryHandler(handle_choice, pattern="^(video|audio):"))
-        app.add_handler(CallbackQueryHandler(handle_quality, pattern="^(1080p|720p|480p|back):"))
+        app.add_handler(CallbackQueryHandler(handle_quality, pattern="^(1080p|720p|480p|360p|back):"))
         app.add_error_handler(error_handler)
         
         logger.info("✅ Bot setup completed - Starting polling...")
