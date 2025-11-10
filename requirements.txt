@@ -1,2 +1,5 @@
 python-telegram-bot==20.7
 yt-dlp==2023.11.16
+beautifulsoup4==4.12.2
+scrapetube==0.9.1
+pytube==15.0.0
