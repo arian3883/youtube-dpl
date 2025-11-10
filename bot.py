@@ -92,11 +92,11 @@ async def handle_quality(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def download_video(query, context, url: str, quality: str):
     try:
         format_map = {
-            "1080p60": "bestvideo[height=1080][fps>=60][vcodec^=avc1]+bestaudio/best[height=1080][fps>=60]/bestvideo[height=1080][fps>=60]+bestaudio/best",
-            "1080p": "bestvideo[height=1080][vcodec^=avc1]+bestaudio/best[height=1080]/bestvideo[height=1080]+bestaudio/best",
-            "720p60": "bestvideo[height=720][fps>=60][vcodec^=avc1]+bestaudio/best[height=720][fps>=60]/bestvideo[height=720][fps>=60]+bestaudio/best",
-            "720p": "bestvideo[height=720][vcodec^=avc1]+bestaudio/best[height=720]/bestvideo[height=720]+bestaudio/best",
-            "480p": "bestvideo[height=480][vcodec^=avc1]+bestaudio/best[height=480]/bestvideo[height=480]+bestaudio/best"
+            "1080p60": "bestvideo[height=1080][fps>=60]+bestaudio/best",
+            "1080p": "bestvideo[height=1080]+bestaudio/best",
+            "720p60": "bestvideo[height=720][fps>=60]+bestaudio/best",
+            "720p": "bestvideo[height=720]+bestaudio/best",
+            "480p": "bestvideo[height=480]+bestaudio/best"
         }
         
         ydl_opts = {
@@ -133,11 +133,9 @@ async def download_audio(query, context, url: str):
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": "320",  # Highest quality MP3
+                "preferredquality": "320",
             }],
             "outtmpl": "audio.%(ext)s",
-            "extractaudio": True,
-            "audioformat": "mp3",
         }
 
         def download():
@@ -171,6 +169,7 @@ def main():
     logger.info("🤖 Initializing bot application...")
     
     try:
+        # MODERN ApplicationBuilder (fixes the error)
         application = ApplicationBuilder().token(TOKEN).build()
         
         application.add_handler(CommandHandler("start", start))
