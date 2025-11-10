@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import yt_dlp
 
 # Setup logging
@@ -21,158 +21,166 @@ if not TOKEN:
 
 logger.info("🚀 Bot starting on Railway...")
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "🎉 Welcome to YouTube Downloader Bot! Send me a YouTube link."
     )
 
-def show_options(update: Update, context: CallbackContext):
+async def show_options(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     
     if not any(domain in url for domain in ["youtube.com", "youtu.be"]):
-        update.message.reply_text("❌ Please send a valid YouTube link.")
+        await update.message.reply_text("❌ Please send a valid YouTube link.")
         return
 
     keyboard = [
         [InlineKeyboardButton("🎥 Download Video", callback_data=f"video:{url}")],
-        [InlineKeyboardButton("🎵 Download Audio", callback_data=f"audio:{url}")]
+        [InlineKeyboardButton("🎵 Download Audio (Highest Quality)", callback_data=f"audio:{url}")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Choose download type:", reply_markup=reply_markup)
+    await update.message.reply_text("Choose download type:", reply_markup=reply_markup)
 
-def handle_choice(update: Update, context: CallbackContext):
+async def handle_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     try:
         choice, url = query.data.split(":", 1)
 
         if choice == "video":
             keyboard = [
+                [InlineKeyboardButton("1080p 60fps", callback_data=f"1080p60:{url}")],
                 [InlineKeyboardButton("1080p", callback_data=f"1080p:{url}")],
+                [InlineKeyboardButton("720p 60fps", callback_data=f"720p60:{url}")],
                 [InlineKeyboardButton("720p", callback_data=f"720p:{url}")],
                 [InlineKeyboardButton("480p", callback_data=f"480p:{url}")],
                 [InlineKeyboardButton("🔙 Back", callback_data=f"back:{url}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.edit_message_text("Select video quality:", reply_markup=reply_markup)
+            await query.edit_message_text("Select video quality:", reply_markup=reply_markup)
 
         elif choice == "audio":
-            query.edit_message_text("🎵 Downloading audio...")
-            download_audio(query, context, url)
+            await query.edit_message_text("🎵 Downloading highest quality audio...")
+            await download_audio(query, context, url)
 
     except Exception as e:
         logger.error(f"Error in handle_choice: {e}")
-        query.edit_message_text("❌ Error processing choice.")
+        await query.edit_message_text("❌ Error processing choice.")
 
-def handle_quality(update: Update, context: CallbackContext):
+async def handle_quality(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     try:
         quality, url = query.data.split(":", 1)
 
-        if quality in ["1080p", "720p", "480p"]:
-            query.edit_message_text(f"📥 Downloading {quality}...")
-            download_video(query, context, url, quality)
+        if quality in ["1080p60", "1080p", "720p60", "720p", "480p"]:
+            await query.edit_message_text(f"📥 Downloading {quality}...")
+            await download_video(query, context, url, quality)
         elif quality == "back":
             keyboard = [
                 [InlineKeyboardButton("🎥 Download Video", callback_data=f"video:{url}")],
-                [InlineKeyboardButton("🎵 Download Audio", callback_data=f"audio:{url}")]
+                [InlineKeyboardButton("🎵 Download Audio (Highest Quality)", callback_data=f"audio:{url}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.edit_message_text("Choose download type:", reply_markup=reply_markup)
+            await query.edit_message_text("Choose download type:", reply_markup=reply_markup)
 
     except Exception as e:
         logger.error(f"Error in handle_quality: {e}")
-        query.edit_message_text("❌ Error processing quality.")
+        await query.edit_message_text("❌ Error processing quality.")
 
-def download_video(query, context, url: str, quality: str):
+async def download_video(query, context, url: str, quality: str):
     try:
         format_map = {
-            "1080p": "best[height<=1080]",
-            "720p": "best[height<=720]", 
-            "480p": "best[height<=480]"
+            "1080p60": "bestvideo[height=1080][fps>=60][vcodec^=avc1]+bestaudio/best[height=1080][fps>=60]/bestvideo[height=1080][fps>=60]+bestaudio/best",
+            "1080p": "bestvideo[height=1080][vcodec^=avc1]+bestaudio/best[height=1080]/bestvideo[height=1080]+bestaudio/best",
+            "720p60": "bestvideo[height=720][fps>=60][vcodec^=avc1]+bestaudio/best[height=720][fps>=60]/bestvideo[height=720][fps>=60]+bestaudio/best",
+            "720p": "bestvideo[height=720][vcodec^=avc1]+bestaudio/best[height=720]/bestvideo[height=720]+bestaudio/best",
+            "480p": "bestvideo[height=480][vcodec^=avc1]+bestaudio/best[height=480]/bestvideo[height=480]+bestaudio/best"
         }
         
         ydl_opts = {
-            "format": format_map.get(quality, "best[height<=720]"),
+            "format": format_map.get(quality, "best[height<=1080]"),
             "outtmpl": "video.%(ext)s",
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            title = info.get('title', 'Video')
+        def download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                return ydl.prepare_filename(info), info.get('title', 'Video')
+
+        loop = asyncio.get_event_loop()
+        filename, title = await loop.run_in_executor(None, download)
         
         with open(filename, "rb") as video_file:
-            context.bot.send_video(
+            await context.bot.send_video(
                 chat_id=query.message.chat_id,
                 video=video_file,
                 caption=f"🎥 {title} - {quality}"
             )
         
         os.remove(filename)
-        query.edit_message_text(f"✅ Download completed!")
+        await query.edit_message_text(f"✅ Download completed: {title}")
 
     except Exception as e:
         logger.error(f"Download video error: {e}")
-        query.edit_message_text(f"❌ Download failed: {str(e)}")
+        await query.edit_message_text(f"❌ Download failed: {str(e)}")
 
-def download_audio(query, context, url: str):
+async def download_audio(query, context, url: str):
     try:
         ydl_opts = {
             "format": "bestaudio/best",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": "192",
+                "preferredquality": "320",  # Highest quality MP3
             }],
             "outtmpl": "audio.%(ext)s",
+            "extractaudio": True,
+            "audioformat": "mp3",
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = "audio.mp3"
-            title = info.get('title', 'Audio')
+        def download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                return "audio.mp3", info.get('title', 'Audio')
+
+        loop = asyncio.get_event_loop()
+        filename, title = await loop.run_in_executor(None, download)
         
         with open(filename, "rb") as audio_file:
-            context.bot.send_audio(
+            await context.bot.send_audio(
                 chat_id=query.message.chat_id,
                 audio=audio_file,
-                caption=f"🎵 {title}"
+                caption=f"🎵 {title} (320kbps)",
+                title=title,
+                performer="YouTube"
             )
         
         os.remove(filename)
-        query.edit_message_text(f"✅ Audio download completed!")
+        await query.edit_message_text(f"✅ Highest quality audio download completed: {title}")
 
     except Exception as e:
         logger.error(f"Download audio error: {e}")
-        query.edit_message_text(f"❌ Audio download failed: {str(e)}")
+        await query.edit_message_text(f"❌ Audio download failed: {str(e)}")
 
-def error_handler(update: Update, context: CallbackContext):
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Bot error: {context.error}")
 
 def main():
     logger.info("🤖 Initializing bot application...")
     
     try:
-        # Use Updater (compatible with older versions)
-        updater = Updater(TOKEN, use_context=True)
-        dispatcher = updater.dispatcher
+        application = ApplicationBuilder().token(TOKEN).build()
         
-        # Add handlers
-        dispatcher.add_handler(CommandHandler("start", start))
-        dispatcher.add_handler(MessageHandler(filters.Filters.text & ~filters.Filters.command, show_options))
-        dispatcher.add_handler(CallbackQueryHandler(handle_choice, pattern="^(video|audio):"))
-        dispatcher.add_handler(CallbackQueryHandler(handle_quality, pattern="^(1080p|720p|480p|back):"))
-        dispatcher.add_error_handler(error_handler)
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, show_options))
+        application.add_handler(CallbackQueryHandler(handle_choice, pattern="^(video|audio):"))
+        application.add_handler(CallbackQueryHandler(handle_quality, pattern="^(1080p60|1080p|720p60|720p|480p|back):"))
+        application.add_error_handler(error_handler)
         
         logger.info("✅ Bot setup completed - Starting polling...")
-        
-        # Start polling
-        updater.start_polling()
-        updater.idle()
+        application.run_polling()
         
     except Exception as e:
         logger.error(f"❌ Failed to start bot: {e}")
