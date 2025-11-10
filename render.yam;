@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: youtube-telegram-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TOKEN
+        value: 8524475219:AAFnDKeR4i1VSLCRHwLU1YweW_m8IiuZM2Y
